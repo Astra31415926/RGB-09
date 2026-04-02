@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>COLQR.G.B LAB</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050507; --panel: #0d0d14; --accent: #00ff9d;
+            --r: #ff3e3e; --g: #00ff9d; --b: #0077ff; --text: #f0f0f0;
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: 'Space Grotesk', sans-serif; display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; overflow-x: hidden;
+        }
+
+        /* --- Header & Menu --- */
+        header { width: 100%; padding: 25px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 100; }
+        .logo { font-size: 24px; font-weight: 700; letter-spacing: 2px; }
+        .logo .c1 { color: var(--r); } .logo .c2 { color: var(--g); } .logo .c3 { color: var(--b); }
+        .logo .dot { color: var(--g); }
+        
+        .menu-btn { width: 30px; height: 20px; display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; }
+        .menu-btn div { height: 3px; background: var(--text); border-radius: 2px; transition: 0.3s; }
+
+        #sideMenu {
+            position: fixed; top: 0; right: -100%; width: 80%; height: 100%; background: var(--panel);
+            z-index: 200; transition: 0.4s; padding: 40px; border-left: 1px solid #1a1a25;
+        }
+        #sideMenu.open { right: 0; }
+        .menu-item { margin-bottom: 30px; }
+        .menu-item h4 { margin: 0 0 10px; color: var(--accent); text-transform: uppercase; font-size: 14px; }
+        .menu-item p { margin: 0; font-size: 15px; color: #aaa; line-height: 1.5; }
+        .lang-switch { margin-top: 40px; display: flex; gap: 10px; }
+        .lang-btn { padding: 8px 15px; border: 1px solid #333; background: none; color: #fff; border-radius: 4px; cursor: pointer; }
+        .lang-btn.active { border-color: var(--accent); color: var(--accent); }
+
+        /* --- Viewport (Dynamic) --- */
+        .viewport-container {
+            position: relative; width: 92vw; height: 92vw; max-width: 450px; max-height: 450px;
+            border: 2px solid #1a1a25; background: #000; overflow: hidden;
+            transition: all 0.7s cubic-bezier(0.19, 1, 0.22, 1);
+            display: flex; justify-content: center; align-items: center; margin-bottom: 20px;
+        }
+        .viewport-container.analyzing { width: 220px; height: 220px; border-color: var(--accent); border-radius: 12px; }
+        video, #displayCanvas { width: 100%; height: 100%; object-fit: cover; }
+        
+        .laser-line {
+            position: absolute; top: 0; left: 0; width: 100%; height: 6px;
+            background: #fff; box-shadow: 0 0 25px 8px var(--g);
+            display: none; z-index: 10; opacity: 0;
+        }
+
+        /* --- Channels (Vertical) --- */
+        .results-stack { width: 92%; max-width: 500px; display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; }
+        .channel-card {
+            background: var(--panel); border: 1px solid #1a1a25; border-radius: 10px; padding: 18px;
+            transition: 0.3s; position: relative;
+        }
+        .channel-card.active { border-color: var(--clr); box-shadow: 0 0 15px rgba(0,0,0,0.5); }
+        .ch-label { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #444; margin-bottom: 8px; }
+        .channel-card.active .ch-label { color: var(--clr); }
+        
+        .ch-input {
+            width: 100%; background: none; border: none; color: #fff; font-family: monospace;
+            font-size: 16px; outline: none; padding: 0; resize: none;
+        }
+        .ch-input::placeholder { color: #333; }
+        .retry-hint { color: #ff3e3e; font-size: 11px; margin-top: 8px; display: none; cursor: pointer; text-decoration: underline; }
+
+        /* --- Buttons --- */
+        .controls { width: 92%; max-width: 500px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding-bottom: 40px; }
+        .btn {
+            background: #111; border: 1px solid #222; color: #fff; padding: 18px;
+            font-family: inherit; font-weight: 600; cursor: pointer; border-radius: 12px; font-size: 15px;
+        }
+        .btn-main { grid-column: span 2; background: var(--accent); color: #000; border: none; font-size: 18px; }
+        .btn-reset { grid-column: span 2; border-color: #331a1a; color: #a55; margin-top: 10px; }
+
+        /* Effects */
+        .flash-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #fff; opacity: 0; pointer-events: none; z-index: 300; }
+
+        @keyframes laserAnim {
+            0% { top: 0; opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+
+        a.qr-link { color: var(--accent); text-decoration: underline; }
+    </style>
+</head>
+<body onload="initApp()">
+
+<header>
+    <div class="logo">
+        <span class="c1">C</span><span class="c2">O</span><span class="c3">L</span><span class="c1">Q</span><span class="c2">R</span><span class="dot">.G.</span><span class="c3">B</span> LAB
+    </div>
+    <div class="menu-btn" onclick="toggleMenu()">
+        <div></div><div></div><div></div>
+    </div>
+</header>
+
+<div id="sideMenu">
+    <div class="menu-item">
+        <h4 id="m-author-title">Автор</h4>
+        <p id="m-author-text">Розробка: [Твоє Ім'я/Компанія]</p>
+    </div>
+    <div class="menu-item">
+        <h4 id="m-how-title">Як користуватися</h4>
+        <p id="m-how-text">Наведіть камеру на кольоровий QR-код. Система автоматично збере інформацію з трьох каналів (R, G, B).</p>
+    </div>
+    <div class="menu-item">
+        <h4 id="m-contact-title">Контакти</h4>
+        <p id="m-contact-text">support@colqr.lab</p>
+    </div>
+    <div class="lang-switch">
+        <button class="lang-btn active" onclick="setLang('uk')">UA</button>
+        <button class="lang-btn" onclick="setLang('en')">EN</button>
+    </div>
+</div>
+
+<div class="viewport-container" id="viewPort">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="displayCanvas" style="display:none"></canvas>
+    <div class="laser-line" id="laser"></div>
+</div>
+
+<div class="results-stack">
+    <div class="channel-card" id="card-0" style="--clr: var(--r)">
+        <div class="ch-label">Red Channel</div>
+        <textarea class="ch-input" id="in-0" rows="1" placeholder="Введіть текст..."></textarea>
+        <div class="retry-hint" id="hint-0" onclick="retryScan(0)">Не вдалося прочитати — спробувати знову</div>
+    </div>
+    <div class="channel-card" id="card-1" style="--clr: var(--g)">
+        <div class="ch-label">Green Channel</div>
+        <textarea class="ch-input" id="in-1" rows="1" placeholder="Введіть текст..."></textarea>
+        <div class="retry-hint" id="hint-1" onclick="retryScan(1)">Не вдалося прочитати — спробувати знову</div>
+    </div>
+    <div class="channel-card" id="card-2" style="--clr: var(--b)">
+        <div class="ch-label">Blue Channel</div>
+        <textarea class="ch-input" id="in-2" rows="1" placeholder="Введіть текст..."></textarea>
+        <div class="retry-hint" id="hint-2" onclick="retryScan(2)">Не вдалося прочитати — спробувати знову</div>
+    </div>
+</div>
+
+<div class="controls">
+    <button class="btn" id="btn-cam" onclick="startCamera()">Увімкнути камеру</button>
+    <button class="btn" onclick="document.getElementById('fileInput').click()">Завантажити фото</button>
+    <button class="btn btn-main" onclick="generateQR()">СГЕНЕРУВАТИ</button>
+    <button class="btn btn-reset" onclick="location.reload()">Скинути все (Reset)</button>
+</div>
+
+<div class="flash-overlay" id="flash"></div>
+<input type="file" id="fileInput" style="display:none" accept="image/*" onchange="handleFile(this)">
+
+<script>
+    // --- State & Lang ---
+    let currentLang = 'uk';
+    let isScanning = false;
+    let results = [null, null, null];
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const i18n = {
+        uk: {
+            author: "Автор", how: "Як користуватися", contact: "Контакти",
+            cam: "Увімкнути камеру", gen: "СГЕНЕРУВАТИ", reset: "Скинути все (Reset)",
+            retry: "Не вдалося прочитати — спробувати знову", placeholder: "Введіть текст..."
+        },
+        en: {
+            author: "Author", how: "How to use", contact: "Contacts",
+            cam: "Enable Camera", gen: "GENERATE", reset: "Reset Everything",
+            retry: "Failed to read — try again", placeholder: "Enter text..."
+        }
+    };
+
+    // --- Audio ---
+    function playLaser() {
+        const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+        o.type = 'sawtooth'; o.frequency.setValueAtTime(600, audioCtx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 1.6);
+        g.gain.setValueAtTime(0.2, audioCtx.currentTime); g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1.6);
+        o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 1.6);
+    }
+
+    function playSuccess() {
+        const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+        o.frequency.setValueAtTime(800, audioCtx.currentTime); g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.3);
+    }
+
+    // --- Core ---
+    function initApp() {
+        setLang('uk');
+        // Попытка автозапуска камеры
+        startCamera();
+    }
+
+    function toggleMenu() { document.getElementById('sideMenu').classList.toggle('open'); }
+
+    function setLang(lang) {
+        currentLang = lang;
+        document.getElementById('m-author-title').innerText = i18n[lang].author;
+        document.getElementById('m-how-title').innerText = i18n[lang].how;
+        document.getElementById('m-contact-title').innerText = i18n[lang].contact;
+        document.getElementById('btn-cam').innerText = i18n[lang].cam;
+        document.querySelectorAll('.btn-main')[0].innerText = i18n[lang].gen;
+        document.querySelectorAll('.btn-reset')[0].innerText = i18n[lang].reset;
+        document.querySelectorAll('.retry-hint').forEach(h => h.innerText = i18n[lang].retry);
+        document.querySelectorAll('.ch-input').forEach(i => i.placeholder = i18n[lang].placeholder);
+        
+        document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.innerText.toLowerCase() === lang));
+    }
+
+    async function startCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            document.getElementById('video').srcObject = stream;
+            isScanning = true;
+            requestAnimationFrame(tick);
+        } catch (e) { console.warn("Camera blocked"); }
+    }
+
+    function tick() {
+        if (isScanning && video.readyState === video.HAVE_ENOUGH_DATA) {
+            analyzeFrame(video);
+        }
+        requestAnimationFrame(tick);
+    }
+
+    function analyzeFrame(source) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 500; canvas.height = 500;
+        const ctx = canvas.getContext('2d');
+        
+        // Кроп центра
+        if (source.videoWidth) {
+            ctx.drawImage(source, (source.videoWidth-500)/2, (source.videoHeight-500)/2, 500, 500, 0, 0, 500, 500);
+        } else {
+            ctx.drawImage(source, 0, 0, 500, 500);
+        }
+        
+        const imgData = ctx.getImageData(0, 0, 500, 500);
+        let captured = [];
+
+        for (let i = 0; i < 3; i++) {
+            if (results[i]) continue;
+            const qr = jsQR(applyBradley(imgData, i), 500, 500);
+            if (qr) {
+                results[i] = qr.data;
+                captured.push(i);
+            }
+        }
+
+        if (captured.length > 0) {
+            isScanning = false;
+            runEffects(captured);
+        }
+    }
+
+    function runEffects(indexes) {
+        // Freeze
+        const displayCanvas = document.getElementById('displayCanvas');
+        displayCanvas.width = video.videoWidth || 500;
+        displayCanvas.height = video.videoHeight || 500;
+        displayCanvas.getContext('2d').drawImage(video, 0, 0);
+        video.style.display = 'none';
+        displayCanvas.style.display = 'block';
+        
+        document.getElementById('viewPort').classList.add('analyzing');
+        
+        // Laser
+        const laser = document.getElementById('laser');
+        laser.style.display = 'block';
+        laser.style.animation = 'laserAnim 1.6s forwards';
+        playLaser();
+
+        setTimeout(() => {
+            // Flash
+            const flash = document.getElementById('flash');
+            flash.style.opacity = '1';
+            setTimeout(() => flash.style.opacity = '0', 200);
+            playSuccess();
+            
+            // Show Results
+            indexes.forEach(idx => {
+                const card = document.getElementById(`card-${idx}`);
+                const input = document.getElementById(`in-${idx}`);
+                card.classList.add('active');
+                input.value = results[idx];
+                detectLinks(input);
+            });
+
+            // Show "Retry" for failed ones
+            for(let i=0; i<3; i++) {
+                if(!results[i]) document.getElementById(`hint-${i}`).style.display = 'block';
+            }
+        }, 1600);
+    }
+
+    function retryScan(idx) {
+        results[idx] = null;
+        document.getElementById(`hint-${idx}`).style.display = 'none';
+        document.getElementById(`card-${idx}`).classList.remove('active');
+        document.getElementById(`in-${idx}`).value = "";
+        
+        isScanning = true;
+        video.style.display = 'block';
+        document.getElementById('displayCanvas').style.display = 'none';
+        document.getElementById('viewPort').classList.remove('analyzing');
+    }
+
+    function handleFile(input) {
+        if (!input.files[0]) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => analyzeFrame(img);
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+
+    function detectLinks(textarea) {
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        // Мы не можем сделать кликабельной ссылку прямо в textarea, 
+        // но можем предложить перейти, если это URL
+        if(urlRegex.test(textarea.value)) {
+            textarea.style.color = 'var(--accent)';
+            textarea.style.textDecoration = 'underline';
+            textarea.onclick = () => { if(confirm("Open link?")) window.open(textarea.value, "_blank"); };
+        }
+    }
+
+    function generateQR() {
+        const container = document.getElementById('viewPort');
+        container.innerHTML = '<div id="qrcode" style="padding:20px; background:#fff;"></div>';
+        container.classList.add('analyzing');
+        const combinedText = `R:${document.getElementById('in-0').value}\nG:${document.getElementById('in-1').value}\nB:${document.getElementById('in-2').value}`;
+        new QRCode(document.getElementById("qrcode"), {
+            text: combinedText,
+            width: 180, height: 180,
+            colorDark: "#000000", colorLight: "#ffffff"
+        });
+    }
+
+    function applyBradley(sourceData, ch) {
+        const w = 500, h = 500, input = sourceData.data;
+        const output = new Uint8ClampedArray(w * h * 4);
+        const intImg = new Int32Array(w * h);
+        const s = 62, t = 15;
+        for (let y = 0; y < h; y++) {
+            let sum = 0;
+            for (let x = 0; x < w; x++) {
+                sum += input[(y * w + x) * 4 + ch];
+                intImg[y * w + x] = (y > 0 ? intImg[(y - 1) * w + x] : 0) + sum;
+            }
+        }
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const x1 = Math.max(x - s, 0), x2 = Math.min(x + s, w - 1);
+                const y1 = Math.max(y - s, 0), y2 = Math.min(y + s, h - 1);
+                const count = (x2 - x1) * (y2 - y1);
+                const sum = intImg[y2 * w + x2] - intImg[y1 * w + x2] - intImg[y2 * w + x1] + intImg[y1 * w + x1];
+                const val = input[(y * w + x) * 4 + ch];
+                const final = (val * count < sum * (100 - t) / 100) ? 0 : 255;
+                const idx = (y * w + x) * 4;
+                output[idx] = output[idx+1] = output[idx+2] = final; output[idx+3] = 255;
+            }
+        }
+        return output;
+    }
+</script>
+</body>
+</html>
